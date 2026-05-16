@@ -17,6 +17,12 @@ const FALLBACK_LOCATION = {
   label: "Los Angeles",
 };
 
+// Preset locations available in the bottom-left location picker.
+const PRESET_LOCATIONS = [
+  { id: "nyc", label: "New York City", latitude: 40.7128, longitude: -74.0060 },
+  { id: "sf",  label: "San Francisco", latitude: 37.7749, longitude: -122.4194 },
+];
+
 // Friendly phrasing per score band. Picked to feel human, not clinical.
 const SUNSET_ADJECTIVES = [
   { min: 9.0, label: "the whole sky's gonna pop" },
@@ -59,7 +65,9 @@ const state = {
   mode: "sunset",            // "sunset" | "sunrise"
   dateKey: todayDateKey(),
   location: { ...FALLBACK_LOCATION },
-  locationSource: "default", // "default" | "browser"
+  locationSource: "default", // "default" | "browser" | "preset" | "manual"
+  locationShort: "",         // short region label, e.g. "HI", "CA"
+  showLocationPopup: false,
   prediction: null,
   loading: false,
   error: null,

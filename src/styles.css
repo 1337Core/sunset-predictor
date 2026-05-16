@@ -253,7 +253,7 @@ kbd {
   font-family: var(--font-mono);
   font-size: 0.86rem;
   font-weight: 400;
-  color: var(--ui-top-ink-soft);
+  color: rgba(28, 32, 36, 0.58);
   border-radius: 999px;
   transition: color 240ms ease;
   outline: none;
@@ -267,11 +267,11 @@ kbd {
 }
 
 .pill-option:hover {
-  color: var(--ui-top-ink);
+  color: rgba(24, 28, 32, 0.86);
 }
 
 .pill-option.active {
-  color: var(--ui-top-ink);
+  color: rgba(24, 28, 32, 0.92);
 }
 
 .pill-indicator {
@@ -361,8 +361,8 @@ kbd {
 .details-sheet {
   position: fixed;
   left: 50%;
-  bottom: calc(20px + var(--safe-bottom));
-  transform: translate(-50%, calc(100% + 40px));
+  top: 50%;
+  transform: translate(-50%, calc(-50% + 28px)) scale(0.98);
   width: min(620px, calc(100vw - 48px));
   max-height: min(76vh, 640px);
   overflow: auto;
@@ -381,7 +381,7 @@ kbd {
 }
 
 .details-sheet.open {
-  transform: translate(-50%, 0);
+  transform: translate(-50%, -50%) scale(1);
   opacity: 1;
   pointer-events: auto;
 }
