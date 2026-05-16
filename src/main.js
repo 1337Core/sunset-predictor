@@ -122,14 +122,24 @@ app.innerHTML = `
     <section class="details-sheet" id="details-sheet" aria-hidden="true">
       <div class="details-inner">
         <header class="details-head">
-          <div>
-            <p class="mono dim small">forecast detail</p>
-            <h2 id="details-title">Sunset</h2>
-          </div>
+          <p class="mono dim small details-eyebrow">forecast detail</p>
           <button class="details-close" id="details-close" aria-label="Close details">×</button>
         </header>
-        <p class="details-reason mono small" id="details-reason"></p>
-        <div class="details-grid" id="details-grid"></div>
+
+        <div class="details-title">
+          <h2 id="details-title-event">sunset</h2>
+          <span class="mono dim details-title-time" id="details-title-time"></span>
+        </div>
+
+        <p class="details-reason" id="details-reason"></p>
+
+        <div class="details-rule"></div>
+
+        <dl class="details-grid" id="details-grid"></dl>
+
+        <div class="details-rule"></div>
+
+        <p class="mono dim small details-section-label" id="details-factors-label">what's moving the score</p>
         <div class="details-factors" id="details-factors"></div>
       </div>
     </section>
@@ -169,10 +179,12 @@ const pillIndicator = modeToggle.querySelector(".pill-indicator");
 const pillOptions = modeToggle.querySelectorAll(".pill-option");
 const detailsSheet = document.querySelector("#details-sheet");
 const detailsClose = document.querySelector("#details-close");
-const detailsTitle = document.querySelector("#details-title");
+const detailsTitleEvent = document.querySelector("#details-title-event");
+const detailsTitleTime = document.querySelector("#details-title-time");
 const detailsReason = document.querySelector("#details-reason");
 const detailsGrid = document.querySelector("#details-grid");
 const detailsFactors = document.querySelector("#details-factors");
+const detailsFactorsLabel = document.querySelector("#details-factors-label");
 const toastEl = document.querySelector("#toast");
 
 // ---------------------------------------------------------------------------
@@ -356,47 +368,68 @@ function renderDetails() {
   detailsSheet.classList.toggle("open", state.showDetails);
   detailsSheet.setAttribute("aria-hidden", state.showDetails ? "false" : "true");
 
+  const eventName = state.mode === "sunrise" ? "sunrise" : "sunset";
+  detailsTitleEvent.textContent = eventName;
+
   if (!p || p.status !== "ok") {
     detailsGrid.innerHTML = "";
     detailsFactors.innerHTML = "";
+    detailsFactorsLabel.style.display = "none";
     detailsReason.textContent = p?.reason || "no detail available";
-    detailsTitle.textContent = state.mode === "sunrise" ? "Sunrise" : "Sunset";
+    detailsTitleTime.textContent = "";
     return;
   }
 
-  detailsTitle.textContent = `${state.mode === "sunrise" ? "Sunrise" : "Sunset"} · ${p.eventTimeLocal}`;
+  detailsTitleTime.textContent = p.eventTimeLocal ? p.eventTimeLocal.toLowerCase() : "";
   detailsReason.textContent = p.reason;
+  detailsFactorsLabel.style.display = "";
 
   const sample = p.debugSample || {};
   const codeLabel = p.weatherCodeLabel ?? WEATHER_CODE_LABELS.get(sample.weather_code) ?? "—";
 
   const cells = [
-    ["weather", codeLabel],
+    ["weather", String(codeLabel).toLowerCase()],
     ["mid cloud", fmtPct(sample.cloud_cover_mid)],
     ["low cloud", fmtPct(sample.cloud_cover_low)],
     ["high cloud", fmtPct(sample.cloud_cover_high)],
-    ["AOD", fmtNum(sample.aerosol_optical_depth, 2)],
+    ["aod", fmtNum(sample.aerosol_optical_depth, 2)],
     ["humidity", fmtPct(sample.relative_humidity_2m)],
-    ["PM2.5", fmtNum(sample.pm2_5, 1)],
+    ["pm2.5", fmtNum(sample.pm2_5, 1)],
     ["twilight", fmtNum(p.civilTwilightMinutes, 0, " min")],
   ];
 
   detailsGrid.innerHTML = cells
-    .map(([k, v]) => `<div class="cell"><dt class="mono dim small">${k}</dt><dd class="mono">${v}</dd></div>`)
+    .map(
+      ([k, v]) => `
+        <div class="cell">
+          <dt>${k}</dt>
+          <dd>${v}</dd>
+        </div>
+      `,
+    )
     .join("");
 
   const factors = (p.topFactors ?? []).filter((f) => Math.abs(f.contribution) >= 0.2);
   if (factors.length) {
     detailsFactors.innerHTML = factors
-      .map((f) => `
-        <div class="factor">
-          <span class="mono small dim">${factorLabel(f.factor)}</span>
-          <span class="factor-msg">${f.message}</span>
-          <span class="mono small ${f.contribution >= 0 ? "pos" : "neg"}">${f.contribution >= 0 ? "+" : ""}${f.contribution.toFixed(2)}</span>
-        </div>
-      `).join("");
+      .map(
+        (f) => `
+          <div class="factor">
+            <span class="factor-label">${factorLabel(f.factor)}</span>
+            <span class="factor-msg">${f.message}</span>
+            <span class="factor-value ${f.contribution >= 0 ? "pos" : "neg"}">${f.contribution >= 0 ? "+" : ""}${f.contribution.toFixed(2)}</span>
+          </div>
+        `,
+      )
+      .join("");
   } else {
-    detailsFactors.innerHTML = `<div class="factor"><span class="mono small dim">factors</span><span class="factor-msg">no single signal dominates</span><span class="mono small">·</span></div>`;
+    detailsFactors.innerHTML = `
+      <div class="factor">
+        <span class="factor-label">factors</span>
+        <span class="factor-msg">no single signal dominates</span>
+        <span class="factor-value dim">·</span>
+      </div>
+    `;
   }
 }
 
