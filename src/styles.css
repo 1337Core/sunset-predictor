@@ -11,6 +11,18 @@
   --ink: rgba(28, 32, 36, 0.92);
   --ink-soft: rgba(28, 32, 36, 0.6);
   --ink-dim: rgba(28, 32, 36, 0.42);
+  --ui-top-ink-rgb: 28, 32, 36;
+  --ui-hero-ink-rgb: 28, 32, 36;
+  --ui-bottom-ink-rgb: 28, 32, 36;
+  --ui-top-ink: rgba(var(--ui-top-ink-rgb), 0.94);
+  --ui-top-ink-soft: rgba(var(--ui-top-ink-rgb), 0.68);
+  --ui-top-ink-dim: rgba(var(--ui-top-ink-rgb), 0.48);
+  --ui-hero-ink: rgba(var(--ui-hero-ink-rgb), 0.96);
+  --ui-hero-ink-soft: rgba(var(--ui-hero-ink-rgb), 0.72);
+  --ui-hero-ink-dim: rgba(var(--ui-hero-ink-rgb), 0.52);
+  --ui-bottom-ink: rgba(var(--ui-bottom-ink-rgb), 0.94);
+  --ui-bottom-ink-soft: rgba(var(--ui-bottom-ink-rgb), 0.68);
+  --ui-bottom-ink-dim: rgba(var(--ui-bottom-ink-rgb), 0.48);
   --pill-bg: rgba(255, 255, 255, 0.55);
   --pill-stroke: rgba(255, 255, 255, 0.7);
   --pill-indicator: rgba(255, 255, 255, 0.95);
@@ -129,9 +141,10 @@ kbd {
   display: flex;
   gap: 14px;
   align-items: flex-start;
-  color: var(--ink-soft);
+  color: var(--ui-top-ink-soft);
   pointer-events: auto;
   user-select: none;
+  transition: color 500ms ease;
 }
 
 .top-left {
@@ -169,6 +182,7 @@ kbd {
   align-self: end;
   text-align: right;
   max-width: min(280px, 35vw);
+  color: var(--ui-bottom-ink-soft);
 }
 
 .mono {
@@ -187,13 +201,24 @@ kbd {
   color: var(--ink-dim);
 }
 
+.top-left .dim,
+.top-center .dim,
+.top-right .dim {
+  color: var(--ui-top-ink-dim);
+}
+
+.bottom-left .dim,
+.bottom-right .dim {
+  color: var(--ui-bottom-ink-dim);
+}
+
 .corner p {
   margin: 0;
 }
 
 .corner em {
   font-style: italic;
-  color: var(--ink);
+  color: var(--ui-top-ink);
 }
 
 .corner u {
@@ -228,17 +253,25 @@ kbd {
   font-family: var(--font-mono);
   font-size: 0.86rem;
   font-weight: 400;
-  color: var(--ink-soft);
+  color: var(--ui-top-ink-soft);
   border-radius: 999px;
   transition: color 240ms ease;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pill-option:focus,
+.pill-option:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .pill-option:hover {
-  color: var(--ink);
+  color: var(--ui-top-ink);
 }
 
 .pill-option.active {
-  color: var(--ink);
+  color: var(--ui-top-ink);
 }
 
 .pill-indicator {
@@ -280,8 +313,8 @@ kbd {
   letter-spacing: -0.04em;
   display: inline-flex;
   align-items: baseline;
-  color: var(--ink);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.15);
+  color: var(--ui-hero-ink);
+  text-shadow: 0 1px 18px rgba(0, 0, 0, 0.12);
   transition: color 600ms ease;
 }
 
@@ -290,7 +323,7 @@ kbd {
 }
 
 .score-denom {
-  color: var(--ink-soft);
+  color: var(--ui-hero-ink-soft);
   font-weight: 800;
   font-size: 0.82em;
 }
@@ -308,7 +341,7 @@ kbd {
   margin: 6px 0 0;
   font-size: 1.2rem;
   font-weight: 500;
-  color: var(--ink-soft);
+  color: var(--ui-hero-ink-soft);
   letter-spacing: 0.005em;
   text-transform: lowercase;
 }
@@ -318,6 +351,7 @@ kbd {
   font-size: 0.78rem;
   letter-spacing: 0.04em;
   text-transform: lowercase;
+  color: var(--ui-hero-ink-dim);
 }
 
 /* ============================================================
