@@ -66,7 +66,6 @@ const state = {
   showDetails: false,
   detailsAnim: 0,
   now: new Date(),
-  greeting: "hi",
 };
 
 // Latest in-flight prediction request id so stale responses can be ignored.
@@ -101,7 +100,6 @@ app.innerHTML = `
     </header>
 
     <main class="hero" aria-live="polite">
-      <p class="hero-greeting" id="hero-greeting">hi</p>
       <h1 class="hero-score" id="hero-score">
         <span class="score-num">—</span><span class="score-denom">/10</span>
       </h1>
@@ -109,12 +107,9 @@ app.innerHTML = `
       <p class="hero-meta mono dim" id="hero-meta"></p>
     </main>
 
-    <footer class="corner bottom-left" id="corner-about"></footer>
-
     <footer class="corner bottom-right" id="corner-hint">
       <p class="mono small dim">
         Navigate with arrow keys,<br/>
-        tap anywhere for birds.<br/>
         Press <kbd>d</kbd> for details.
       </p>
     </footer>
@@ -148,19 +143,6 @@ app.innerHTML = `
   </div>
 `;
 
-// Replace the templated about text after innerHTML so `${state.mode}` interpolates safely.
-function renderAboutCopy() {
-  document.querySelector("#corner-about").innerHTML = `
-    <p class="mono small">
-      We aim to predict <em>${state.mode} potential</em> based
-      on certain <u>weather conditions</u>. The
-      actual ${state.mode} is entirely up to the sky.
-      60% science, 40% chance. Good luck!
-    </p>
-  `;
-}
-renderAboutCopy();
-
 // ---------------------------------------------------------------------------
 // Element handles
 // ---------------------------------------------------------------------------
@@ -170,7 +152,6 @@ const birdStage = document.querySelector("#bird-stage");
 const uiDate = document.querySelector("#ui-date");
 const uiClock = document.querySelector("#ui-clock");
 const uiCountdown = document.querySelector("#ui-countdown");
-const heroGreeting = document.querySelector("#hero-greeting");
 const heroScore = document.querySelector("#hero-score");
 const heroTag = document.querySelector("#hero-tag");
 const heroMeta = document.querySelector("#hero-meta");
@@ -195,16 +176,6 @@ function adjective(score, mode) {
   if (score == null) return "—";
   const table = mode === "sunrise" ? SUNRISE_ADJECTIVES : SUNSET_ADJECTIVES;
   return table.find((row) => score >= row.min)?.label ?? "—";
-}
-
-function greetingForTime(date) {
-  const h = date.getHours();
-  if (h < 5) return "still up?";
-  if (h < 11) return "good morning";
-  if (h < 14) return "hi there";
-  if (h < 17) return "hey";
-  if (h < 21) return "evening";
-  return "hi";
 }
 
 function formatDateLong(dateKey) {
@@ -318,8 +289,6 @@ function renderCorners() {
 }
 
 function renderHero() {
-  heroGreeting.textContent = state.greeting;
-
   if (state.loading && !state.prediction) {
     heroScore.innerHTML = `<span class="score-num pulse">—</span><span class="score-denom">/10</span>`;
     heroTag.textContent = `reading the ${state.mode} sky…`;
@@ -356,10 +325,8 @@ function renderHero() {
   const numClass = state.loading ? "score-num pulse" : "score-num";
   heroScore.innerHTML = `<span class="${numClass}">${score}</span><span class="score-denom">/10</span>`;
   heroTag.textContent = adjective(p.score, state.mode);
-  const place = state.locationSource === "browser"
-    ? "your spot"
-    : FALLBACK_LOCATION.label;
-  heroMeta.textContent = `${state.mode} at ${p.eventTimeLocal} · ${place}`;
+  const place = state.locationSource === "browser" ? "" : ` · ${FALLBACK_LOCATION.label}`;
+  heroMeta.textContent = `${state.mode} at ${p.eventTimeLocal}${place}`;
   document.body.dataset.mood = moodFromScore(p.score);
 }
 
@@ -460,7 +427,6 @@ function fmtPct(value) {
 }
 
 function renderAll() {
-  renderAboutCopy();
   renderCorners();
   renderHero();
   renderModeToggle();
@@ -505,7 +471,7 @@ function tryBrowserLocation() {
       state.location = {
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
-        label: "your spot",
+        label: "Current location",
       };
       state.locationSource = "browser";
       runPrediction({ silent: true });
@@ -523,9 +489,7 @@ function tryBrowserLocation() {
 
 function tick() {
   state.now = new Date();
-  state.greeting = greetingForTime(state.now);
   renderCorners();
-  heroGreeting.textContent = state.greeting;
   requestAnimationFrame(() => setTimeout(tick, 1000));
 }
 
@@ -537,7 +501,6 @@ function setMode(mode) {
   if (mode === state.mode) return;
   state.mode = mode;
   renderModeToggle();
-  renderAboutCopy();
   runPrediction();
 }
 
