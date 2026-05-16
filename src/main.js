@@ -16,12 +16,13 @@ const FALLBACK_LOCATION = {
   longitude: -122.6784,
   label: "Portland, Oregon",
   presetId: "pdx",
+  short: "OR",
 };
 
 // Preset locations available in the bottom-left location picker.
 const PRESET_LOCATIONS = [
-  { id: "pdx", label: "Portland, Oregon", latitude: 45.5152, longitude: -122.6784 },
-  { id: "nyc", label: "New York City", latitude: 40.7128, longitude: -74.0060 },
+  { id: "pdx", label: "Portland, Oregon", latitude: 45.5152, longitude: -122.6784, short: "OR" },
+  { id: "nyc", label: "New York, New York", latitude: 40.7128, longitude: -74.0060, short: "NY" },
 ];
 
 // Friendly phrasing per score band. Picked to feel human, not clinical.
@@ -487,7 +488,10 @@ function fmtPct(value) {
 function renderLocation() {
   const { latitude, longitude } = state.location;
   const coordText = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-  const short = state.locationShort
+  // Prefer an explicit short label on the location (set by presets) so e.g.
+  // Portland doesn't get tagged "CA" via its America/Los_Angeles timezone.
+  const short = state.location.short
+    || state.locationShort
     || shortFromTimeZone(state.prediction?.timeZone)
     || shortFromTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone)
     || "—";
@@ -717,7 +721,12 @@ locationPopup.addEventListener("click", (e) => {
   const preset = PRESET_LOCATIONS.find((p) => p.id === id);
   if (preset) {
     setLocation(
-      { latitude: preset.latitude, longitude: preset.longitude, label: preset.label },
+      {
+        latitude: preset.latitude,
+        longitude: preset.longitude,
+        label: preset.label,
+        short: preset.short,
+      },
       "preset",
       { presetId: preset.id },
     );
