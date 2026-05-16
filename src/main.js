@@ -267,7 +267,8 @@ function renderCorners() {
   const timeZone = state.prediction?.timeZone
     || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  uiClock.textContent = formatClock12(state.now, timeZone);
+  uiClock.textContent = state.prediction?.eventTimeLocal
+    || (state.loading ? "—:—" : formatClock12(state.now, timeZone));
 
   // Countdown to the event. Only shows when the displayed date is today and
   // the event is still ahead — otherwise it would be meaningless or stale.
@@ -276,7 +277,7 @@ function renderCorners() {
     if (diff > 0) {
       uiCountdown.textContent = formatCountdown(diff);
     } else {
-      uiCountdown.textContent = "passed";
+      uiCountdown.textContent = "Passed";
     }
   } else if (state.prediction?.eventTimeLocal) {
     // Showing a non-today prediction — surface the event time itself.
@@ -577,6 +578,8 @@ window.addEventListener("resize", () => renderModeToggle());
 createSky(skyCanvas, () => ({
   mode: state.mode,
   score: state.prediction?.score ?? null,
+  sample: state.prediction?.debugSample ?? null,
+  weatherCode: state.prediction?.debugSample?.weather_code ?? null,
 }));
 
 renderAll();

@@ -53,6 +53,16 @@ body[data-mood="good"]  { --ink: rgba(46, 30, 28, 0.92); --ink-soft: rgba(46, 30
 body[data-mood="ok"]    { --ink: rgba(28, 32, 36, 0.9);  --ink-soft: rgba(28, 32, 36, 0.6); --ink-dim: rgba(28, 32, 36, 0.4); }
 body[data-mood="poor"]  { --ink: rgba(28, 32, 36, 0.88); --ink-soft: rgba(28, 32, 36, 0.58); --ink-dim: rgba(28, 32, 36, 0.38); }
 
+/* When the sky renderer reports a dark scene (night / storm), flip text */
+body[data-night="1"] {
+  --ink: rgba(240, 244, 250, 0.95);
+  --ink-soft: rgba(240, 244, 250, 0.70);
+  --ink-dim: rgba(240, 244, 250, 0.45);
+  --pill-bg: rgba(20, 24, 32, 0.45);
+  --pill-stroke: rgba(255, 255, 255, 0.18);
+  --pill-indicator: rgba(255, 255, 255, 0.18);
+}
+
 button {
   font: inherit;
   color: inherit;
