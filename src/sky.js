@@ -221,6 +221,13 @@ function generateClouds(seed = 7) {
         puffs,
         fluff: layer.fluff,
         puffFactors,
+        // Visibility state. Animates smoothly toward targetVis (0 or 1) so
+        // clouds fade in/out gracefully instead of popping when the cover cap
+        // changes between scenes/weather samples.
+        vis: 0,
+        targetVis: 0,
+        // Per-cloud phase used for a gentle entry parallax (drift-in from side).
+        entryPhase: rand(),
       });
     }
   });
@@ -645,30 +652,57 @@ export function createSky(canvas, getState) {
 
     // Clouds are already in tier order (high → mid → low) so we can draw
     // them in place — no sort allocation needed.
+    //
+    // Each cloud has a `vis` value that animates 0 → 1 (and back) over time,
+    // so when the cover cap rises new clouds drift/fade in gracefully and
+    // when it falls old ones soft-dissolve, instead of popping in/out.
     const prevAlpha = ctx.globalAlpha;
     const used = [0, 0, 0];
+    // Fade rate: ~1.8s for a full in/out so it feels weather-like, not abrupt.
+    const VIS_RATE_IN = 0.55;   // per second
+    const VIS_RATE_OUT = 0.35;  // slower fade-out reads as drifting away
+    // easeOutCubic for a soft "arrive" feel.
+    const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+
     for (let i = 0; i < clouds.length; i++) {
       const c = clouds[i];
       const cap = c.tier === TIER_HIGH ? highCount : c.tier === TIER_MID ? midCount : lowCount;
-      if (used[c.tier] >= cap) continue;
-      used[c.tier]++;
+      const shouldShow = used[c.tier] < cap;
+      if (shouldShow) used[c.tier]++;
+      c.targetVis = shouldShow ? 1 : 0;
 
-      const sprite = cloudSprites[i];
-      const drift = (cloudOffset * c.speed) % 1.4 - 0.2;
-      const x = (c.x + drift) % 1.2 - 0.1;
-      const opacity =
+      // Animate vis toward targetVis. Asymmetric rates give a natural feel.
+      const rate = c.targetVis > c.vis ? VIS_RATE_IN : VIS_RATE_OUT;
+      const step = rate * dt;
+      if (c.targetVis > c.vis) c.vis = Math.min(c.targetVis, c.vis + step);
+      else                     c.vis = Math.max(c.targetVis, c.vis - step);
+
+      if (c.vis < 0.005) continue;
+
+      const baseOpacity =
         c.tier === TIER_HIGH ? highOpacity :
         c.tier === TIER_MID  ? midOpacity  :
                                lowOpacity;
-      if (opacity < 0.01) continue;
+      if (baseOpacity < 0.01) continue;
+
+      const sprite = cloudSprites[i];
+      const eased = easeOut(c.vis);
+
+      // Gentle entry animation: cloud drifts in slightly from its sideways
+      // direction of travel, and puffs out from ~88% to 100% scale.
+      const entryOffset = (1 - eased) * 0.04 * (c.entryPhase < 0.5 ? -1 : 1);
+      const scaleAnim = 0.88 + 0.12 * eased;
+
+      const drift = (cloudOffset * c.speed) % 1.4 - 0.2;
+      const x = (c.x + drift + entryOffset) % 1.2 - 0.1;
 
       // Scale sprite to the cloud's natural size in screen pixels.
-      const baseR = minDim * 0.055 * c.scale;
+      const baseR = minDim * 0.055 * c.scale * scaleAnim;
       // Sprite represents a cloud whose baseR == SPRITE_BASE_R; scale accordingly.
       const dw = (SPRITE_SIZE * baseR) / SPRITE_BASE_R;
       const dh = dw;
 
-      ctx.globalAlpha = opacity;
+      ctx.globalAlpha = baseOpacity * eased;
       ctx.drawImage(sprite, x * w - dw / 2, c.y * h - dh / 2, dw, dh);
     }
     ctx.globalAlpha = prevAlpha;
