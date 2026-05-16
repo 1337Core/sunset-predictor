@@ -12,15 +12,16 @@ import { releaseBirds } from "./birds.js";
 // ---------------------------------------------------------------------------
 
 const FALLBACK_LOCATION = {
-  latitude: 34.0522,
-  longitude: -118.2437,
-  label: "Los Angeles",
+  latitude: 45.5152,
+  longitude: -122.6784,
+  label: "Portland, Oregon",
+  presetId: "pdx",
 };
 
 // Preset locations available in the bottom-left location picker.
 const PRESET_LOCATIONS = [
+  { id: "pdx", label: "Portland, Oregon", latitude: 45.5152, longitude: -122.6784 },
   { id: "nyc", label: "New York City", latitude: 40.7128, longitude: -74.0060 },
-  { id: "sf",  label: "San Francisco", latitude: 37.7749, longitude: -122.4194 },
 ];
 
 // Friendly phrasing per score band. Picked to feel human, not clinical.
@@ -65,7 +66,7 @@ const state = {
   mode: "sunset",            // "sunset" | "sunrise"
   dateKey: todayDateKey(),
   location: { ...FALLBACK_LOCATION },
-  locationSource: "default", // "default" | "browser" | "preset" | "manual"
+  locationSource: "preset",  // "browser" | "preset" | "manual"
   locationShort: "",         // short region label, e.g. "HI", "CA"
   showLocationPopup: false,
   prediction: null,
@@ -115,10 +116,53 @@ app.innerHTML = `
       <p class="hero-meta mono dim" id="hero-meta"></p>
     </main>
 
+    <div class="corner bottom-left" id="corner-location">
+      <div class="location-popup" id="location-popup" aria-hidden="true">
+        <ul class="location-list" role="listbox">
+          ${PRESET_LOCATIONS.map(
+            (p) => `
+              <li>
+                <button class="location-row" data-loc="${p.id}" role="option">
+                  <span class="location-row-label">${p.label}</span>
+                </button>
+              </li>`,
+          ).join("")}
+          <li>
+            <button class="location-row" data-loc="current" role="option">
+              <span class="location-row-label">Current location</span>
+              <svg class="location-row-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2 7.5 13.5 2 9 14l-1.5-5L2 7.5Z" fill="currentColor"/>
+              </svg>
+            </button>
+          </li>
+        </ul>
+        <div class="location-popup-rule"></div>
+        <form class="location-coords" id="location-coords-form" autocomplete="off">
+          <input
+            class="location-coords-input mono"
+            id="location-coords-input"
+            type="text"
+            inputmode="decimal"
+            spellcheck="false"
+            aria-label="Latitude, Longitude"
+          />
+          <button class="location-coords-submit" type="submit" aria-label="Go to coordinates">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 8h9M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <span class="location-coords-tag mono dim" id="location-coords-tag"></span>
+        </form>
+      </div>
+      <button class="location-trigger mono" id="location-trigger" aria-haspopup="dialog" aria-expanded="false">
+        <span id="location-trigger-label">—</span>
+      </button>
+    </div>
+
     <footer class="corner bottom-right" id="corner-hint">
       <p class="mono small dim">
         Navigate with arrow keys,<br/>
-        Press <kbd>d</kbd> for details.
+        Press <kbd>d</kbd> for details, <kbd>l</kbd> for location.
       </p>
     </footer>
 
@@ -175,6 +219,13 @@ const detailsGrid = document.querySelector("#details-grid");
 const detailsFactors = document.querySelector("#details-factors");
 const detailsFactorsLabel = document.querySelector("#details-factors-label");
 const toastEl = document.querySelector("#toast");
+const cornerLocation = document.querySelector("#corner-location");
+const locationPopup = document.querySelector("#location-popup");
+const locationTrigger = document.querySelector("#location-trigger");
+const locationTriggerLabel = document.querySelector("#location-trigger-label");
+const locationCoordsForm = document.querySelector("#location-coords-form");
+const locationCoordsInput = document.querySelector("#location-coords-input");
+const locationCoordsTag = document.querySelector("#location-coords-tag");
 
 // ---------------------------------------------------------------------------
 // Utility helpers
@@ -275,21 +326,19 @@ function renderCorners() {
   const timeZone = state.prediction?.timeZone
     || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  uiClock.textContent = state.prediction?.eventTimeLocal
-    || (state.loading ? "—:—" : formatClock12(state.now, timeZone));
+  uiClock.textContent = formatClock12(state.now, timeZone);
 
-  // Countdown to the event. Only shows when the displayed date is today and
-  // the event is still ahead — otherwise it would be meaningless or stale.
-  if (state.prediction?.eventTimeUtc && state.dateKey === todayDateKey()) {
+  // Countdown to the event. Only show a ticking countdown for today's
+  // upcoming event; otherwise leave the secondary slot empty.
+  if (state.prediction?.eventTimeUtc) {
     const diff = new Date(state.prediction.eventTimeUtc).getTime() - state.now.getTime();
-    if (diff > 0) {
+    if (state.dateKey === todayDateKey() && diff > 0) {
       uiCountdown.textContent = formatCountdown(diff);
     } else {
-      uiCountdown.textContent = "Passed";
+      uiCountdown.textContent = "";
     }
   } else if (state.prediction?.eventTimeLocal) {
-    // Showing a non-today prediction — surface the event time itself.
-    uiCountdown.textContent = state.prediction.eventTimeLocal;
+    uiCountdown.textContent = "";
   } else if (state.loading) {
     uiCountdown.textContent = "—:—:—";
   } else {
@@ -435,11 +484,92 @@ function fmtPct(value) {
   return `${Math.round(value)}%`;
 }
 
+function renderLocation() {
+  const { latitude, longitude } = state.location;
+  const coordText = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+  const short = state.locationShort
+    || shortFromTimeZone(state.prediction?.timeZone)
+    || shortFromTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone)
+    || "—";
+
+  locationTriggerLabel.textContent = short;
+  locationCoordsTag.textContent = short;
+
+  // Only overwrite the input when the popup is closed, so user edits aren't
+  // clobbered while typing.
+  if (!state.showLocationPopup) {
+    locationCoordsInput.value = coordText;
+  }
+
+  locationPopup.classList.toggle("open", state.showLocationPopup);
+  locationPopup.setAttribute("aria-hidden", state.showLocationPopup ? "false" : "true");
+  locationTrigger.setAttribute("aria-expanded", state.showLocationPopup ? "true" : "false");
+
+  // Highlight the active preset (if any).
+  locationPopup.querySelectorAll(".location-row").forEach((row) => {
+    const id = row.dataset.loc;
+    let active = false;
+    if (id === "current" && state.locationSource === "browser") active = true;
+    else if (state.locationSource === "preset" && state.location.presetId === id) active = true;
+    row.classList.toggle("active", active);
+  });
+}
+
 function renderAll() {
   renderCorners();
   renderHero();
   renderModeToggle();
   renderDetails();
+  renderLocation();
+}
+
+// Pull a short region-ish label from an IANA time zone. e.g.
+//   Pacific/Honolulu  -> "HI"  (mapped)
+//   America/Los_Angeles -> "LA"
+//   Europe/Paris -> "PAR"
+// Falls back to a 2–3 letter slice of the city.
+const TZ_SHORT_OVERRIDES = new Map([
+  ["Pacific/Honolulu", "HI"],
+  ["America/Anchorage", "AK"],
+  ["America/Los_Angeles", "CA"],
+  ["America/Denver", "CO"],
+  ["America/Phoenix", "AZ"],
+  ["America/Chicago", "IL"],
+  ["America/New_York", "NY"],
+  ["America/Detroit", "MI"],
+  ["America/Toronto", "ON"],
+  ["America/Vancouver", "BC"],
+  ["America/Mexico_City", "MX"],
+  ["Europe/London", "UK"],
+  ["Europe/Paris", "FR"],
+  ["Europe/Berlin", "DE"],
+  ["Europe/Madrid", "ES"],
+  ["Europe/Rome", "IT"],
+  ["Asia/Tokyo", "JP"],
+  ["Asia/Seoul", "KR"],
+  ["Asia/Shanghai", "CN"],
+  ["Asia/Hong_Kong", "HK"],
+  ["Asia/Singapore", "SG"],
+  ["Asia/Kolkata", "IN"],
+  ["Australia/Sydney", "AU"],
+]);
+
+function shortFromTimeZone(tz) {
+  if (!tz) return "";
+  if (TZ_SHORT_OVERRIDES.has(tz)) return TZ_SHORT_OVERRIDES.get(tz);
+  const parts = tz.split("/");
+  const city = (parts[parts.length - 1] || "").replace(/_/g, " ");
+  if (!city) return "";
+  // Take first letters of each word, max 3.
+  const initials = city
+    .split(/\s+/)
+    .map((w) => w[0])
+    .filter(Boolean)
+    .join("")
+    .slice(0, 3)
+    .toUpperCase();
+  if (initials.length >= 2) return initials;
+  return city.slice(0, 3).toUpperCase();
 }
 
 // ---------------------------------------------------------------------------
@@ -529,15 +659,115 @@ detailsClose.addEventListener("click", () => {
   renderDetails();
 });
 
+// ---- Location popup ----
+
+function openLocationPopup() {
+  state.showLocationPopup = true;
+  // Sync input with current location when opening.
+  locationCoordsInput.value = `${state.location.latitude.toFixed(4)}, ${state.location.longitude.toFixed(4)}`;
+  renderLocation();
+}
+
+function closeLocationPopup() {
+  state.showLocationPopup = false;
+  renderLocation();
+}
+
+function setLocation(loc, source, extra = {}) {
+  state.location = { ...loc, ...extra };
+  state.locationSource = source;
+  state.locationShort = ""; // will be re-derived from new timezone after fetch
+  runPrediction();
+  renderLocation();
+}
+
+locationTrigger.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (state.showLocationPopup) closeLocationPopup();
+  else openLocationPopup();
+});
+
+locationPopup.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const row = e.target.closest(".location-row");
+  if (!row) return;
+  const id = row.dataset.loc;
+  if (id === "current") {
+    if (!navigator.geolocation) {
+      showToast("geolocation unavailable");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation(
+          {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            label: "Current location",
+          },
+          "browser",
+        );
+        closeLocationPopup();
+      },
+      () => showToast("location denied"),
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 },
+    );
+    return;
+  }
+  const preset = PRESET_LOCATIONS.find((p) => p.id === id);
+  if (preset) {
+    setLocation(
+      { latitude: preset.latitude, longitude: preset.longitude, label: preset.label },
+      "preset",
+      { presetId: preset.id },
+    );
+    closeLocationPopup();
+  }
+});
+
+locationCoordsForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const raw = locationCoordsInput.value.trim();
+  const m = raw.match(/^\s*(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)\s*$/);
+  if (!m) {
+    showToast("use: lat, lon");
+    return;
+  }
+  const lat = parseFloat(m[1]);
+  const lon = parseFloat(m[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)
+      || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    showToast("bad coordinates");
+    return;
+  }
+  setLocation({ latitude: lat, longitude: lon, label: "Custom" }, "manual");
+  closeLocationPopup();
+});
+
+// Close popup when clicking outside.
+document.addEventListener("click", (e) => {
+  if (!state.showLocationPopup) return;
+  if (e.target.closest("#corner-location")) return;
+  closeLocationPopup();
+});
+
 // Tap anywhere (that isn't an interactive control) to release birds.
 document.addEventListener("click", (e) => {
-  if (e.target.closest("button, a, .details-sheet, .pill-toggle")) return;
+  if (e.target.closest("button, a, input, .details-sheet, .pill-toggle, #corner-location")) return;
   releaseBirds(birdStage);
 });
 
 // Keyboard shortcuts.
 window.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // Don't intercept normal typing in the coords input.
+  if (e.target instanceof HTMLInputElement) {
+    if (e.key === "Escape") {
+      closeLocationPopup();
+      e.target.blur();
+    }
+    return;
+  }
   switch (e.key) {
     case "ArrowLeft":
       e.preventDefault();
@@ -573,6 +803,12 @@ window.addEventListener("keydown", (e) => {
         state.showDetails = false;
         renderDetails();
       }
+      if (state.showLocationPopup) closeLocationPopup();
+      break;
+    case "l":
+    case "L":
+      if (state.showLocationPopup) closeLocationPopup();
+      else openLocationPopup();
       break;
   }
 });
