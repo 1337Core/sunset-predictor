@@ -16,13 +16,12 @@ const FALLBACK_LOCATION = {
   longitude: -122.6784,
   label: "Portland, Oregon",
   presetId: "pdx",
-  short: "OR",
 };
 
 // Preset locations available in the bottom-left location picker.
 const PRESET_LOCATIONS = [
-  { id: "pdx", label: "Portland, Oregon", latitude: 45.5152, longitude: -122.6784, short: "OR" },
-  { id: "nyc", label: "New York, New York", latitude: 40.7128, longitude: -74.0060, short: "NY" },
+  { id: "pdx", label: "Portland, Oregon", latitude: 45.5152, longitude: -122.6784 },
+  { id: "nyc", label: "New York, New York", latitude: 40.7128, longitude: -74.0060 },
 ];
 
 // Friendly phrasing per score band. Picked to feel human, not clinical.
@@ -68,7 +67,6 @@ const state = {
   dateKey: todayDateKey(),
   location: { ...FALLBACK_LOCATION },
   locationSource: "preset",  // "browser" | "preset" | "manual"
-  locationShort: "",         // short region label, e.g. "HI", "CA"
   showLocationPopup: false,
   prediction: null,
   loading: false,
@@ -488,16 +486,12 @@ function fmtPct(value) {
 function renderLocation() {
   const { latitude, longitude } = state.location;
   const coordText = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-  // Prefer an explicit short label on the location (set by presets) so e.g.
-  // Portland doesn't get tagged "CA" via its America/Los_Angeles timezone.
-  const short = state.location.short
-    || state.locationShort
-    || shortFromTimeZone(state.prediction?.timeZone)
-    || shortFromTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone)
-    || "—";
+  // Use the full location label (e.g. "Portland, Oregon") rather than a
+  // 2-letter region code, which was unreliable and not particularly useful.
+  const label = state.location.label || "—";
 
-  locationTriggerLabel.textContent = short;
-  locationCoordsTag.textContent = short;
+  locationTriggerLabel.textContent = label;
+  locationCoordsTag.textContent = label;
 
   // Only overwrite the input when the popup is closed, so user edits aren't
   // clobbered while typing.
@@ -525,55 +519,6 @@ function renderAll() {
   renderModeToggle();
   renderDetails();
   renderLocation();
-}
-
-// Pull a short region-ish label from an IANA time zone. e.g.
-//   Pacific/Honolulu  -> "HI"  (mapped)
-//   America/Los_Angeles -> "LA"
-//   Europe/Paris -> "PAR"
-// Falls back to a 2–3 letter slice of the city.
-const TZ_SHORT_OVERRIDES = new Map([
-  ["Pacific/Honolulu", "HI"],
-  ["America/Anchorage", "AK"],
-  ["America/Los_Angeles", "CA"],
-  ["America/Denver", "CO"],
-  ["America/Phoenix", "AZ"],
-  ["America/Chicago", "IL"],
-  ["America/New_York", "NY"],
-  ["America/Detroit", "MI"],
-  ["America/Toronto", "ON"],
-  ["America/Vancouver", "BC"],
-  ["America/Mexico_City", "MX"],
-  ["Europe/London", "UK"],
-  ["Europe/Paris", "FR"],
-  ["Europe/Berlin", "DE"],
-  ["Europe/Madrid", "ES"],
-  ["Europe/Rome", "IT"],
-  ["Asia/Tokyo", "JP"],
-  ["Asia/Seoul", "KR"],
-  ["Asia/Shanghai", "CN"],
-  ["Asia/Hong_Kong", "HK"],
-  ["Asia/Singapore", "SG"],
-  ["Asia/Kolkata", "IN"],
-  ["Australia/Sydney", "AU"],
-]);
-
-function shortFromTimeZone(tz) {
-  if (!tz) return "";
-  if (TZ_SHORT_OVERRIDES.has(tz)) return TZ_SHORT_OVERRIDES.get(tz);
-  const parts = tz.split("/");
-  const city = (parts[parts.length - 1] || "").replace(/_/g, " ");
-  if (!city) return "";
-  // Take first letters of each word, max 3.
-  const initials = city
-    .split(/\s+/)
-    .map((w) => w[0])
-    .filter(Boolean)
-    .join("")
-    .slice(0, 3)
-    .toUpperCase();
-  if (initials.length >= 2) return initials;
-  return city.slice(0, 3).toUpperCase();
 }
 
 // ---------------------------------------------------------------------------
@@ -680,7 +625,6 @@ function closeLocationPopup() {
 function setLocation(loc, source, extra = {}) {
   state.location = { ...loc, ...extra };
   state.locationSource = source;
-  state.locationShort = ""; // will be re-derived from new timezone after fetch
   runPrediction();
   renderLocation();
 }
@@ -725,7 +669,6 @@ locationPopup.addEventListener("click", (e) => {
         latitude: preset.latitude,
         longitude: preset.longitude,
         label: preset.label,
-        short: preset.short,
       },
       "preset",
       { presetId: preset.id },
