@@ -188,11 +188,6 @@ app.innerHTML = `
           <path d="M6 7.5h12M6 12h12M6 16.5h7" />
         </svg>
       </button>
-      <button class="mobile-action" type="button" data-action="birds" aria-label="Release birds">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3.5 13.5c2.2-3.4 4.8-3.4 7.5 0M10 12c2.6-4 5.8-4 9.5 0" />
-        </svg>
-      </button>
     </nav>
 
     <section class="details-sheet" id="details-sheet" aria-hidden="true">
@@ -669,9 +664,6 @@ mobileControls.addEventListener("click", (e) => {
       if (!state.showDetails && state.showLocationPopup) closeLocationPopup();
       state.showDetails = !state.showDetails;
       renderDetails();
-      break;
-    case "birds":
-      releaseBirds(birdStage);
       break;
   }
 });
