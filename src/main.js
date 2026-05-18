@@ -165,6 +165,36 @@ app.innerHTML = `
       </p>
     </footer>
 
+    <nav class="mobile-controls" aria-label="Sky controls">
+      <button class="mobile-action" type="button" data-action="prev-day" aria-label="Previous day">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 6 9 12l6 6" />
+        </svg>
+      </button>
+      <button class="mobile-action" type="button" data-action="today" aria-label="Today">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 4.5h10A2.5 2.5 0 0 1 19.5 7v10a2.5 2.5 0 0 1-2.5 2.5H7A2.5 2.5 0 0 1 4.5 17V7A2.5 2.5 0 0 1 7 4.5Z" />
+          <path d="M8 3v3M16 3v3M4.5 9h15" />
+          <path d="M12 13.25h.01" />
+        </svg>
+      </button>
+      <button class="mobile-action" type="button" data-action="next-day" aria-label="Next day">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m9 6 6 6-6 6" />
+        </svg>
+      </button>
+      <button class="mobile-action mobile-action-primary" type="button" data-action="details" aria-label="Open forecast details" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 7.5h12M6 12h12M6 16.5h7" />
+        </svg>
+      </button>
+      <button class="mobile-action" type="button" data-action="birds" aria-label="Release birds">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3.5 13.5c2.2-3.4 4.8-3.4 7.5 0M10 12c2.6-4 5.8-4 9.5 0" />
+        </svg>
+      </button>
+    </nav>
+
     <section class="details-sheet" id="details-sheet" aria-hidden="true">
       <div class="details-inner">
         <header class="details-head">
@@ -225,6 +255,8 @@ const locationTriggerLabel = document.querySelector("#location-trigger-label");
 const locationCoordsForm = document.querySelector("#location-coords-form");
 const locationCoordsInput = document.querySelector("#location-coords-input");
 const locationCoordsTag = document.querySelector("#location-coords-tag");
+const mobileControls = document.querySelector(".mobile-controls");
+const mobileDetailsButton = mobileControls.querySelector('[data-action="details"]');
 
 // ---------------------------------------------------------------------------
 // Utility helpers
@@ -325,7 +357,8 @@ function renderCorners() {
   const timeZone = state.prediction?.timeZone
     || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  uiClock.textContent = formatClock12(state.now, timeZone);
+  uiClock.textContent = state.prediction?.eventTimeLocal
+    ?? formatClock12(state.now, timeZone);
 
   // Countdown to the event. Only show a ticking countdown for today's
   // upcoming event; otherwise leave the secondary slot empty.
@@ -389,8 +422,14 @@ function renderHero() {
 
 function renderDetails() {
   const p = state.prediction;
+  document.body.classList.toggle("details-open", state.showDetails);
   detailsSheet.classList.toggle("open", state.showDetails);
   detailsSheet.setAttribute("aria-hidden", state.showDetails ? "false" : "true");
+  mobileDetailsButton.setAttribute("aria-pressed", state.showDetails ? "true" : "false");
+  mobileDetailsButton.setAttribute(
+    "aria-label",
+    state.showDetails ? "Close forecast details" : "Open forecast details",
+  );
 
   const eventName = state.mode === "sunrise" ? "sunrise" : "sunset";
   detailsTitleEvent.textContent = eventName;
@@ -608,9 +647,42 @@ detailsClose.addEventListener("click", () => {
   renderDetails();
 });
 
+mobileControls.addEventListener("click", (e) => {
+  const actionButton = e.target.closest("[data-action]");
+  if (!actionButton) return;
+
+  e.stopPropagation();
+
+  switch (actionButton.dataset.action) {
+    case "prev-day":
+      setDate(shiftDateKey(state.dateKey, -1));
+      break;
+    case "next-day":
+      setDate(shiftDateKey(state.dateKey, +1));
+      break;
+    case "today":
+      state.dateKey = todayDateKey();
+      runPrediction();
+      showToast("today");
+      break;
+    case "details":
+      if (!state.showDetails && state.showLocationPopup) closeLocationPopup();
+      state.showDetails = !state.showDetails;
+      renderDetails();
+      break;
+    case "birds":
+      releaseBirds(birdStage);
+      break;
+  }
+});
+
 // ---- Location popup ----
 
 function openLocationPopup() {
+  if (state.showDetails) {
+    state.showDetails = false;
+    renderDetails();
+  }
   state.showLocationPopup = true;
   // Sync input with current location when opening.
   locationCoordsInput.value = `${state.location.latitude.toFixed(4)}, ${state.location.longitude.toFixed(4)}`;
@@ -736,6 +808,7 @@ window.addEventListener("keydown", (e) => {
       break;
     case "d":
     case "D":
+      if (!state.showDetails && state.showLocationPopup) closeLocationPopup();
       state.showDetails = !state.showDetails;
       renderDetails();
       break;
