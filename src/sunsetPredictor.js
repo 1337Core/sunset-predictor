@@ -264,6 +264,90 @@ function weatherPenalty(code) {
   return 0;
 }
 
+function finiteOr(value, fallback) {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function average(values) {
+  const known = values.filter((value) => Number.isFinite(value));
+  if (!known.length) return null;
+  return known.reduce((sum, value) => sum + value, 0) / known.length;
+}
+
+function min(values) {
+  const known = values.filter((value) => Number.isFinite(value));
+  if (!known.length) return null;
+  return Math.min(...known);
+}
+
+function max(values) {
+  const known = values.filter((value) => Number.isFinite(value));
+  if (!known.length) return null;
+  return Math.max(...known);
+}
+
+function skyWindowOffsetsMinutes(mode, civilTwilightMinutes) {
+  const twilight = clamp(
+    Number.isFinite(civilTwilightMinutes) ? civilTwilightMinutes : 35,
+    24,
+    55,
+  );
+
+  if (mode === "sunrise") {
+    return [-twilight - 15, -twilight, -twilight / 2, -15, 0, 20];
+  }
+
+  return [-45, -20, 0, twilight / 2, twilight, twilight + 15];
+}
+
+function addWindowStats(sample, field, offsetsMinutes, values, mode) {
+  const criticalValues = values.filter((value, index) =>
+    mode === "sunrise"
+      ? offsetsMinutes[index] <= 0
+      : offsetsMinutes[index] >= 0,
+  );
+
+  sample[`${field}_window_avg`] = average(values);
+  sample[`${field}_window_min`] = min(values);
+  sample[`${field}_window_max`] = max(values);
+  sample[`${field}_critical_window_avg`] = average(criticalValues);
+  sample[`${field}_critical_window_max`] = max(criticalValues);
+}
+
+export function attachSkyWindowStats(
+  sample,
+  weatherTimes,
+  hourly,
+  eventUnix,
+  {
+    mode = "sunset",
+    civilTwilightMinutes = sample.civilTwilightMinutes,
+  } = {},
+) {
+  const offsetsMinutes = skyWindowOffsetsMinutes(mode, civilTwilightMinutes);
+  const fields = [
+    "relative_humidity_2m",
+    "cloud_cover",
+    "cloud_cover_low",
+    "cloud_cover_mid",
+    "cloud_cover_high",
+  ];
+
+  for (const field of fields) {
+    const values = offsetsMinutes.map((offsetMinutes) =>
+      interpolateSeries(
+        weatherTimes,
+        hourly[field],
+        eventUnix + offsetMinutes * 60,
+      ),
+    );
+
+    addWindowStats(sample, field, offsetsMinutes, values, mode);
+  }
+
+  return sample;
+}
+
 export function calculateSunsetTimes({
   latitude,
   longitude,
@@ -447,11 +531,20 @@ function contributionMessage(name, value, sample) {
       if (sample.weather_code != null && sample.weather_code >= 95) {
         return "thunderstorms usually suppress sunset color";
       }
+      if (sample.weather_code === 3) {
+        return "overcast conditions usually flatten the color";
+      }
       return "precipitation near sunset is a strong negative";
     case "solarGeometry":
       return "the civil-twilight color window is long enough to help";
     case "magicGap":
       return "a possible clear strip under higher cloud could light up";
+    case "overcastDeck":
+      return "a solid cloud deck may smother the color window";
+    case "cloudWall":
+      return "clouds building through twilight may cut off the color";
+    case "clearSky":
+      return "clear skies do not have enough cloud texture for much color";
     case "marineLayer":
       return "a low marine-layer pattern may mute the show";
     case "smoke":
@@ -488,7 +581,7 @@ function buildReason(contributions, sample, score) {
   let ending = "expect an average sunset.";
   if (score >= 8) ending = "expect vivid color.";
   else if (score >= 6) ending = "expect a decent show.";
-  else if (score <= 3) ending = "sunset likely muted.";
+  else if (score <= 4) ending = "sunset likely muted.";
 
   return `${parts.join(joiner)} — ${ending}`;
 }
@@ -503,37 +596,88 @@ export function scoreSunsetQuality(sample) {
   const humidity = sample.relative_humidity_2m ?? null;
   const aod = sample.aerosol_optical_depth ?? null;
 
-  contributions.midClouds = 2.8 * trapezoidScore(mid, 10, 25, 55, 80);
+  const totalWindowAvg = finiteOr(sample.cloud_cover_window_avg, totalCloud ?? 0);
+  const totalWindowMax = finiteOr(sample.cloud_cover_window_max, totalCloud ?? 0);
+  const criticalTotalMax = finiteOr(
+    sample.cloud_cover_critical_window_max,
+    totalWindowMax,
+  );
+  const lowWindowMax = finiteOr(sample.cloud_cover_low_window_max, low ?? 0);
+  const midWindowAvg = finiteOr(sample.cloud_cover_mid_window_avg, mid ?? 0);
+  const midWindowMax = finiteOr(sample.cloud_cover_mid_window_max, mid ?? 0);
+  const highWindowAvg = finiteOr(sample.cloud_cover_high_window_avg, high ?? 0);
+  const highWindowMax = finiteOr(sample.cloud_cover_high_window_max, high ?? 0);
+  const humidityWindowAvg = finiteOr(
+    sample.relative_humidity_2m_window_avg,
+    humidity ?? 50,
+  );
+  const cloudDeckGate =
+    1 - 0.45 * smoothstep(criticalTotalMax, 58, 82);
 
-  contributions.highClouds = 1.3 * trapezoidScore(high, 2, 8, 28, 45);
+  const midColor =
+    trapezoidScore(midWindowAvg, 12, 24, 48, 72) *
+    (1 - 0.35 * smoothstep(midWindowMax, 82, 100)) *
+    cloudDeckGate;
+  const highColor =
+    trapezoidScore(highWindowAvg, 4, 12, 38, 65) *
+    (1 - 0.25 * smoothstep(highWindowMax, 82, 100)) *
+    cloudDeckGate;
+  const colorPotential = clamp(0.7 * midColor + 0.45 * highColor, 0, 1);
+
+  contributions.midClouds = 2.5 * midColor;
+
+  contributions.highClouds = 1.2 * highColor;
 
   contributions.lowCloudHorizon =
-    0.7 * (1 - smoothstep(low, 18, 45)) - 3.2 * smoothstep(low, 35, 85);
+    0.3 * (1 - smoothstep(lowWindowMax, 12, 35)) -
+    3.2 * smoothstep(lowWindowMax, 25, 75);
+
+  const clearSkyPenalty =
+    (1 - smoothstep(totalWindowAvg, 8, 24)) *
+    (1 - smoothstep(Math.max(midWindowMax, highWindowMax), 8, 28));
+
+  contributions.clearSky = -1.0 * clearSkyPenalty;
+
+  const overcastDeckStrength = Math.max(
+    smoothstep(criticalTotalMax, 62, 90),
+    sample.weather_code === 3 ? smoothstep(totalWindowAvg, 45, 75) : 0,
+  );
+
+  contributions.overcastDeck = -2.8 * overcastDeckStrength;
+
+  const cloudWallStrength =
+    smoothstep(criticalTotalMax - (totalCloud ?? totalWindowAvg), 18, 45) *
+    smoothstep(criticalTotalMax, 60, 84);
+
+  contributions.cloudWall = -2.2 * cloudWallStrength;
 
   contributions.aerosols =
-    1.2 * trapezoidScore(aod, 0.05, 0.1, 0.25, 0.35) -
+    smoothstep(colorPotential, 0.15, 0.55) *
+      0.35 * trapezoidScore(aod, 0.05, 0.1, 0.25, 0.35) -
     1.6 * smoothstep(aod, 0.35, 0.75);
 
   contributions.humidity =
-    0.6 * trapezoidScore(humidity, 15, 25, 55, 70) -
-    1.6 * smoothstep(humidity, 75, 95);
+    0.35 * trapezoidScore(humidityWindowAvg, 20, 30, 55, 68) -
+    1.3 * smoothstep(humidityWindowAvg, 70, 92);
 
   contributions.weather = weatherPenalty(sample.weather_code);
 
   contributions.solarGeometry =
-    0.5 * trapezoidScore(sample.civilTwilightMinutes, 18, 24, 38, 60);
+    0.4 * trapezoidScore(sample.civilTwilightMinutes, 18, 24, 38, 60);
 
   const magicGapStrength =
-    clamp(((totalCloud ?? 0) - 65) / 25, 0, 1) *
-    clamp((35 - (low ?? 100)) / 20, 0, 1) *
-    clamp((Math.max(mid ?? 0, high ?? 0) - 45) / 30, 0, 1) *
+    trapezoidScore(totalWindowAvg, 35, 50, 70, 86) *
+    clamp((40 - lowWindowMax) / 28, 0, 1) *
+    clamp((Math.max(midWindowAvg, highWindowAvg) - 30) / 35, 0, 1) *
+    (1 - smoothstep(criticalTotalMax, 86, 100)) *
+    (1 - cloudWallStrength) *
     (sample.weather_code === 45 ||
     sample.weather_code === 48 ||
     (sample.weather_code ?? 0) >= 51
       ? 0
       : 1);
 
-  contributions.magicGap = 0.9 * magicGapStrength;
+  contributions.magicGap = 0.7 * magicGapStrength;
 
   const dewPointDepression =
     sample.temperature_2m != null && sample.dew_point_2m != null
@@ -541,10 +685,10 @@ export function scoreSunsetQuality(sample) {
       : null;
 
   const marineLayerLikely =
-    (low ?? 0) >= 70 &&
-    (mid ?? 100) <= 25 &&
-    (high ?? 100) <= 25 &&
-    (humidity ?? 0) >= 85 &&
+    lowWindowMax >= 70 &&
+    midWindowAvg <= 25 &&
+    highWindowAvg <= 25 &&
+    humidityWindowAvg >= 85 &&
     (dewPointDepression ?? 10) <= 2.5 &&
     [3, 45, 48].includes(sample.weather_code);
 
@@ -577,7 +721,7 @@ export function scoreSunsetQuality(sample) {
   }
 
   let raw =
-    3.6 + Object.values(contributions).reduce((sum, value) => sum + value, 0);
+    3.0 + Object.values(contributions).reduce((sum, value) => sum + value, 0);
 
   raw = clamp(raw, 1, 10);
 
@@ -595,8 +739,16 @@ export function scoreSunsetQuality(sample) {
     ((sample.weather_code ?? 0) >= 85 && (sample.weather_code ?? 0) <= 86)
   ) {
     raw = Math.min(raw, 4.0);
+  } else if (lowWindowMax >= 85) {
+    raw = Math.min(raw, 3.5);
+  } else if (cloudWallStrength >= 0.55 && criticalTotalMax >= 70) {
+    raw = Math.min(raw, 4.0);
+  } else if (overcastDeckStrength >= 0.75 && magicGapStrength < 0.35) {
+    raw = Math.min(raw, 3.5);
   } else if (sample.weather_code === 3 && magicGapStrength < 0.35) {
-    raw = Math.min(raw, 6.0);
+    raw = Math.min(raw, 4.2);
+  } else if (clearSkyPenalty >= 0.8) {
+    raw = Math.min(raw, 4.2);
   }
 
   const score = Math.round(raw * 10) / 10;
@@ -699,6 +851,10 @@ export async function predictSunrise({
     us_aqi: interpolateSeries(airTimes, air.hourly.us_aqi, sunriseUnix),
     civilTwilightMinutes: sun.civilTwilightMinutes,
   };
+  attachSkyWindowStats(sample, weatherTimes, weather.hourly, sunriseUnix, {
+    mode: "sunrise",
+    civilTwilightMinutes: sun.civilTwilightMinutes,
+  });
 
   const rated = scoreSunsetQuality(sample);
 
@@ -831,6 +987,10 @@ export async function predictSunset({
     us_aqi: interpolateSeries(airTimes, air.hourly.us_aqi, sunsetUnix),
     civilTwilightMinutes: sun.civilTwilightMinutes,
   };
+  attachSkyWindowStats(sample, weatherTimes, weather.hourly, sunsetUnix, {
+    mode: "sunset",
+    civilTwilightMinutes: sun.civilTwilightMinutes,
+  });
 
   const rated = scoreSunsetQuality(sample);
 
